@@ -309,35 +309,35 @@ async function submitTask() {
 
     const fields = {};
     fields[nameFieldId] = name;
-    fields[descFieldId] = desc;
-    fields[priorityFieldId] = priority;
-    fields[statusFieldId] = 'To Do';
-    fields[assignDateFieldId] = Date.now();
-    if (deadline) fields[deadlineFieldId] = new Date(deadline).getTime();
 
     const addResult = await table.addRecord({ fields });
     const newRecordId = addResult.recordId || addResult.record_id || addResult;
 
-    // Ghi các field Link (Người nhận / Người giao / Người duyệt) riêng sau khi có recordId,
-    // vì addRecord không xử lý được định dạng Link field trực tiếp trong fields.
-    let assigneeSetError = '';
-    try {
-      await table.setCellValue(assigneeFieldId, newRecordId, { recordIds: [assigneeId] });
-      await table.setCellValue(assignerFieldId, newRecordId, { recordIds: [myEmployeeRecordId] });
-      await table.setCellValue(approverFieldId, newRecordId, { recordIds: [myEmployeeRecordId] });
-    } catch (e2) {
-      assigneeSetError = e2.message;
-    }
-    // Đọc lại ngay để kiểm tra có thực sự lưu không
-    const checkVal = await table.getCellValue(assigneeFieldId, newRecordId);
+    // Ghi từng field riêng lẻ để cô lập chính xác field nào gây lỗi (nếu có)
+    const errors = [];
+    const trySet = async (label, fieldId, value) => {
+      try {
+        await table.setCellValue(fieldId, newRecordId, value);
+      } catch (e2) {
+        errors.push(label + ': ' + e2.message);
+      }
+    };
 
-    if (!assigneeSetError && extractLinkedRecordIds(checkVal).length > 0) {
+    await trySet('Mô tả', descFieldId, desc);
+    await trySet('Độ ưu tiên', priorityFieldId, priority);
+    await trySet('Trạng thái', statusFieldId, 'To Do');
+    await trySet('Ngày giao', assignDateFieldId, Date.now());
+    if (deadline) await trySet('Hạn chót', deadlineFieldId, new Date(deadline).getTime());
+    await trySet('Người nhận', assigneeFieldId, { recordIds: [assigneeId] });
+    await trySet('Người giao', assignerFieldId, { recordIds: [myEmployeeRecordId] });
+    await trySet('Người duyệt', approverFieldId, { recordIds: [myEmployeeRecordId] });
+
+    if (errors.length === 0) {
       msgEl.style.color = '#2ba471';
       msgEl.innerText = 'Đã giao task thành công!';
     } else {
       msgEl.style.color = '#d54941';
-      msgEl.innerText = 'Tạo task OK nhưng gán Người nhận thất bại. Lỗi: ' +
-        (assigneeSetError || '(không rõ)') + ' | Giá trị đọc lại: ' + JSON.stringify(checkVal);
+      msgEl.innerText = 'Tạo task OK nhưng có lỗi ghi field: ' + errors.join(' | ');
     }
     document.getElementById('f-name').value = '';
     document.getElementById('f-desc').value = '';
