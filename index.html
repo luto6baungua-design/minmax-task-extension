@@ -148,6 +148,7 @@ const FIELD_DEADLINE = 'Hạn chót';
 const FIELD_PRIORITY = 'Độ ưu tiên';
 const FIELD_STATUS = 'Trạng thái';
 const FIELD_ASSIGN_DATE = 'Ngày giao';
+const FIELD_NOTE = 'Ghi chú';
 
 // Bảng nhân sự dùng làm nguồn danh sách "Người nhận" — dùng thẳng Table ID để tránh trùng tên bảng
 const MEMBERS_TABLE_ID = 'tblYi1llTL1iwhon';
@@ -224,6 +225,14 @@ async function init() {
 
   if (isAdmin) {
     document.getElementById('admin-toggle-wrap').style.display = 'flex';
+  } else {
+    // Nhân viên thường: ẩn hẳn tab Giao việc và Dashboard, chỉ còn tab Việc của tôi
+    document.querySelector('.tab-btn[data-tab="assign"]').style.display = 'none';
+    document.querySelector('.tab-btn[data-tab="dashboard"]').style.display = 'none';
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.querySelector('.tab-btn[data-tab="mytasks"]').classList.add('active');
+    document.getElementById('panel-mytasks').classList.add('active');
   }
 
   await loadPeopleForAssigneeDropdown();
@@ -335,11 +344,28 @@ async function submitTask() {
   }
 }
 
+// Luồng trạng thái cho người thực hiện (assignee) tự chuyển
+const SELF_ACTION_FLOW = {
+  'Chưa nhận': { label: 'Nhận task', next: 'Đã nhận' },
+  'Đã nhận': { label: 'Bắt đầu làm', next: 'Đang làm' },
+  'Đang làm': { label: 'Nộp duyệt', next: 'Chờ duyệt' },
+  'Làm lại': { label: 'Nộp lại duyệt', next: 'Chờ duyệt' },
+};
+
+async function appendNote(recId, text) {
+  const noteFieldId = await getFieldIdByName(table, FIELD_NOTE);
+  const old = cellText(await table.getCellValue(noteFieldId, recId));
+  const stamp = new Date().toLocaleString('vi-VN');
+  const newNote = (old ? old + '\n' : '') + `[${stamp}] ${text}`;
+  await table.setCellValue(noteFieldId, recId, newNote);
+}
+
 async function renderMyTasks() {
   const listEl = document.getElementById('task-list');
   listEl.innerHTML = '<div class="empty">Đang tải...</div>';
 
   const assigneeFieldId = await getFieldIdByName(table, FIELD_ASSIGNEE);
+  const assignerFieldId = await getFieldIdByName(table, FIELD_ASSIGNER);
   const nameFieldId = await getFieldIdByName(table, FIELD_NAME);
   const descFieldId = await getFieldIdByName(table, FIELD_DESC);
   const deadlineFieldId = await getFieldIdByName(table, FIELD_DEADLINE);
@@ -356,7 +382,13 @@ async function renderMyTasks() {
     const assignee = await table.getCellValue(assigneeFieldId, recId);
     const linkedIds = extractLinkedRecordIds(assignee);
     const isMine = myEmployeeRecordId && linkedIds.includes(myEmployeeRecordId);
-    if (!viewingAll && !isMine) continue;
+
+    const assigner = await table.getCellValue(assignerFieldId, recId);
+    const assignerArr = Array.isArray(assigner) ? assigner : (assigner ? [assigner] : []);
+    const isApprover = assignerArr.some(p => p && p.id === currentUserId);
+
+    const relevant = isMine || isApprover || viewingAll;
+    if (!relevant) continue;
 
     const status = (await table.getCellValue(statusFieldId, recId))?.text || 'Chưa nhận';
     if (!showAll && (status === 'Hoàn thành' || status === 'Từ chối')) continue;
@@ -370,6 +402,7 @@ async function renderMyTasks() {
       status,
       assigneeName: extractLinkedText(assignee),
       isMine,
+      isApprover,
     });
   }
 
@@ -384,9 +417,9 @@ async function renderMyTasks() {
     card.className = 'task-card';
     const deadlineStr = t.deadline ? new Date(t.deadline).toLocaleDateString('vi-VN') : '—';
     const overdue = t.deadline && t.deadline < Date.now() && t.status !== 'Hoàn thành';
-    // Ở chế độ "Toàn bộ team", nút thao tác chỉ hiện cho đúng task của mình
-    // (giống cơ chế "nút chỉ hiện cho người có quyền" bên hệ thống Finance).
-    const showActions = t.isMine && t.status !== 'Hoàn thành' && t.status !== 'Từ chối';
+
+    const selfAction = t.isMine ? SELF_ACTION_FLOW[t.status] : null;
+    const showApprovalBtns = t.isApprover && t.status === 'Chờ duyệt';
 
     card.innerHTML = `
       <div class="task-title">${t.name || '(chưa đặt tên)'}</div>
@@ -396,11 +429,14 @@ async function renderMyTasks() {
         <span class="badge ${overdue ? 'badge-red' : ''}">Hạn: ${deadlineStr}</span>
         <span class="badge">${t.priority}</span>
         ${viewingAll ? `<span class="badge">👤 ${t.assigneeName}</span>` : ''}
+        ${t.isApprover && !t.isMine ? `<span class="badge" style="background:#fff3d6;color:#a35b00;">Bạn là người giao</span>` : ''}
       </div>
       <div style="margin-top:8px;">
-        ${showActions ? `
-          <button class="btn-small" data-action="progress" data-id="${t.recId}">Bắt đầu làm</button>
-          <button class="btn-small done" data-action="done" data-id="${t.recId}">Hoàn thành</button>
+        ${selfAction ? `<button class="btn-small" data-action="self" data-next="${selfAction.next}" data-id="${t.recId}">${selfAction.label}</button>` : ''}
+        ${showApprovalBtns ? `
+          <button class="btn-small done" data-action="approve" data-id="${t.recId}">Duyệt</button>
+          <button class="btn-small" data-action="revise" data-id="${t.recId}">Yêu cầu làm lại</button>
+          <button class="btn-small" style="border-color:#d54941;color:#d54941;" data-action="reject" data-id="${t.recId}">Từ chối</button>
         ` : ''}
       </div>
     `;
@@ -410,9 +446,25 @@ async function renderMyTasks() {
   listEl.querySelectorAll('button[data-action]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const recId = btn.dataset.id;
-      const newStatus = btn.dataset.action === 'done' ? 'Hoàn thành' : 'Đang làm';
       const statusFieldId = await getFieldIdByName(table, FIELD_STATUS);
-      await table.setCellValue(statusFieldId, recId, { text: newStatus });
+      const action = btn.dataset.action;
+
+      if (action === 'self') {
+        await table.setCellValue(statusFieldId, recId, { text: btn.dataset.next });
+      } else if (action === 'approve') {
+        await table.setCellValue(statusFieldId, recId, { text: 'Hoàn thành' });
+        await appendNote(recId, 'Đã duyệt.');
+      } else if (action === 'revise') {
+        const reason = prompt('Lý do yêu cầu làm lại (bắt buộc):');
+        if (!reason) return;
+        await table.setCellValue(statusFieldId, recId, { text: 'Làm lại' });
+        await appendNote(recId, 'Yêu cầu làm lại: ' + reason);
+      } else if (action === 'reject') {
+        const reason = prompt('Lý do từ chối (bắt buộc):');
+        if (!reason) return;
+        await table.setCellValue(statusFieldId, recId, { text: 'Từ chối' });
+        await appendNote(recId, 'Từ chối: ' + reason);
+      }
       renderMyTasks();
     });
   });
