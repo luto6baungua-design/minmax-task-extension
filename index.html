@@ -155,6 +155,31 @@ async function getFieldIdByName(tbl, name) {
   return found.id;
 }
 
+// Text field trong Lark Base trả về dạng mảng segment (rich text), không phải string thuần.
+// Hàm này chuyển mọi dạng trả về (string / number / mảng segment / object đơn) thành text hiển thị được.
+function cellText(val) {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'string' || typeof val === 'number') return String(val);
+  if (Array.isArray(val)) {
+    return val.map(seg => {
+      if (typeof seg === 'string') return seg;
+      if (seg && typeof seg.text === 'string') return seg.text;
+      return '';
+    }).join('');
+  }
+  if (typeof val === 'object' && typeof val.text === 'string') return val.text;
+  return '';
+}
+
+// Person field trả về mảng object {id, name, en_name, ...}. Hàm này lấy tên hiển thị an toàn,
+// thử vài key phổ biến phòng khi field trả về thiếu "name".
+function personName(cellVal) {
+  const arr = Array.isArray(cellVal) ? cellVal : (cellVal ? [cellVal] : []);
+  const first = arr[0];
+  if (!first) return '(chưa gán)';
+  return first.name || first.en_name || first.full_name || first.id || '(chưa gán)';
+}
+
 async function init() {
   table = await bitable.base.getActiveTable();
   currentUserId = await bitable.bridge.getUserId();
@@ -289,12 +314,12 @@ async function renderMyTasks() {
 
     myTasks.push({
       recId,
-      name: await table.getCellValue(nameFieldId, recId),
-      desc: await table.getCellValue(descFieldId, recId),
+      name: cellText(await table.getCellValue(nameFieldId, recId)),
+      desc: cellText(await table.getCellValue(descFieldId, recId)),
       deadline: await table.getCellValue(deadlineFieldId, recId),
       priority: (await table.getCellValue(priorityFieldId, recId))?.text || '',
       status,
-      assigneeName: Array.isArray(assignee) && assignee[0] ? assignee[0].name : '—',
+      assigneeName: personName(assignee),
       isMine,
     });
   }
@@ -358,9 +383,9 @@ async function renderDashboard() {
 
   for (const recId of recordIds) {
     const assignee = await table.getCellValue(assigneeFieldId, recId);
-    const assigneeName = Array.isArray(assignee) && assignee[0] ? assignee[0].name : '(chưa gán)';
+    const assigneeName = personName(assignee);
     const status = (await table.getCellValue(statusFieldId, recId))?.text || 'Chưa nhận';
-    const name = await table.getCellValue(nameFieldId, recId);
+    const name = cellText(await table.getCellValue(nameFieldId, recId));
     const deadline = await table.getCellValue(deadlineFieldId, recId);
 
     if (!byAssignee.has(assigneeName)) byAssignee.set(assigneeName, { total: 0, done: 0, tasks: [] });
