@@ -115,6 +115,7 @@
       <option value="all">Toàn bộ team</option>
     </select>
   </div>
+  <div id="mytasks-msg" class="msg" style="display:none;"></div>
   <div id="task-list"></div>
 </div>
 
@@ -361,6 +362,7 @@ async function appendNote(recId, text) {
 }
 
 async function renderMyTasks() {
+  document.getElementById('mytasks-msg').style.display = 'none';
   const listEl = document.getElementById('task-list');
   listEl.innerHTML = '<div class="empty">Đang tải...</div>';
 
@@ -468,7 +470,9 @@ async function renderMyTasks() {
         }
         renderMyTasks();
       } catch (e) {
-        alert('Lỗi khi cập nhật: ' + e.message);
+        const msgEl2 = document.getElementById('mytasks-msg');
+        msgEl2.style.display = 'block';
+        msgEl2.innerText = 'Lỗi khi cập nhật: ' + e.message;
         console.error(e);
       }
     });
