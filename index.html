@@ -448,12 +448,17 @@ async function renderMyTasks() {
   listEl.querySelectorAll('button[data-action]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const recId = btn.dataset.id;
-      const statusFieldId = await getFieldIdByName(table, FIELD_STATUS);
       const action = btn.dataset.action;
+      console.log('[DEBUG] Bấm nút, action=', action, 'recId=', recId, 'next=', btn.dataset.next);
 
       try {
+        const statusFieldId = await getFieldIdByName(table, FIELD_STATUS);
+        console.log('[DEBUG] statusFieldId=', statusFieldId);
+
         if (action === 'self') {
+          console.log('[DEBUG] Đang ghi trạng thái mới:', btn.dataset.next);
           await table.setCellValue(statusFieldId, recId, { text: btn.dataset.next });
+          console.log('[DEBUG] Ghi xong, không có lỗi throw.');
         } else if (action === 'approve') {
           await table.setCellValue(statusFieldId, recId, { text: 'Hoàn thành' });
           await appendNote(recId, 'Đã duyệt.');
@@ -468,12 +473,17 @@ async function renderMyTasks() {
           await table.setCellValue(statusFieldId, recId, { text: 'Từ chối' });
           await appendNote(recId, 'Từ chối: ' + reason);
         }
+
+        // Đọc lại ngay để kiểm chứng có thực sự lưu không
+        const checkVal = await table.getCellValue(statusFieldId, recId);
+        console.log('[DEBUG] Đọc lại trạng thái sau khi ghi:', JSON.stringify(checkVal));
+
         renderMyTasks();
       } catch (e) {
+        console.error('[DEBUG] LỖI:', e);
         const msgEl2 = document.getElementById('mytasks-msg');
         msgEl2.style.display = 'block';
         msgEl2.innerText = 'Lỗi khi cập nhật: ' + e.message;
-        console.error(e);
       }
     });
   });
