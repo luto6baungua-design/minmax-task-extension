@@ -56,6 +56,13 @@
   .msg { font-size: 12px; color: #d54941; margin-top: 6px; }
   .debug { font-size: 10px; color: #aaa; margin-top: 20px; word-break: break-all; }
   .empty { color: #999; text-align: center; padding: 20px 0; font-size: 13px; }
+  .dash-group {
+    background: #fff; border: 1px solid #e5e6eb; border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 10px;
+  }
+  .dash-group-title { font-weight: 600; font-size: 13px; margin-bottom: 6px; display:flex; justify-content:space-between; }
+  .dash-row { font-size: 12px; color: #444; padding: 3px 0; border-top: 1px solid #f1f2f3; }
+  .dash-row:first-of-type { border-top: none; }
 </style>
 </head>
 <body>
@@ -63,6 +70,7 @@
 <div class="tabs">
   <button class="tab-btn active" data-tab="assign">Giao việc</button>
   <button class="tab-btn" data-tab="mytasks">Việc của tôi</button>
+  <button class="tab-btn" data-tab="dashboard">Dashboard</button>
 </div>
 
 <!-- TAB 1: GIAO VIỆC -->
@@ -100,7 +108,19 @@
       <option value="everything">Tất cả (kể cả xong)</option>
     </select>
   </div>
+  <div class="toolbar" id="admin-toggle-wrap" style="display:none;">
+    <label style="margin:0;">Xem:</label>
+    <select id="view-scope" style="width:auto;">
+      <option value="mine">Việc của tôi</option>
+      <option value="all">Toàn bộ team</option>
+    </select>
+  </div>
   <div id="task-list"></div>
+</div>
+
+<!-- TAB 3: DASHBOARD -->
+<div class="panel" id="panel-dashboard">
+  <div id="dash-content"></div>
 </div>
 
 <div class="debug" id="debug-info"></div>
@@ -110,7 +130,14 @@ import { bitable } from 'https://esm.sh/@lark-base-open/js-sdk@0.5.0';
 
 let table = null;
 let currentUserId = null;
+let isAdmin = false;
 let peopleCache = []; // danh sách người trong tổ chức (lấy từ field Person để chọn)
+
+// Danh sách User ID được coi là Admin (xem toàn bộ task của team).
+// Cách lấy ID của 1 người: cho họ mở Extension này 1 lần, đọc dòng "User ID của bạn" ở cuối trang.
+const ADMIN_USER_IDS = [
+  'ou_80a4c1589eef7fc9b08cf83c7bb58907', // Thanh Nguyen
+];
 
 const FIELD_NAME = 'Tên Task';
 const FIELD_DESC = 'Mô tả công việc';
@@ -131,13 +158,20 @@ async function getFieldIdByName(tbl, name) {
 async function init() {
   table = await bitable.base.getActiveTable();
   currentUserId = await bitable.bridge.getUserId();
-  document.getElementById('debug-info').innerText = 'User ID của bạn: ' + currentUserId;
+  isAdmin = ADMIN_USER_IDS.includes(currentUserId);
+  document.getElementById('debug-info').innerText =
+    'User ID của bạn: ' + currentUserId + (isAdmin ? ' (Admin)' : '');
+
+  if (isAdmin) {
+    document.getElementById('admin-toggle-wrap').style.display = 'flex';
+  }
 
   await loadPeopleForAssigneeDropdown();
   await renderMyTasks();
 
   document.getElementById('btn-submit').addEventListener('click', submitTask);
   document.getElementById('filter-status').addEventListener('change', renderMyTasks);
+  document.getElementById('view-scope').addEventListener('change', renderMyTasks);
 
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -146,6 +180,7 @@ async function init() {
       btn.classList.add('active');
       document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
       if (btn.dataset.tab === 'mytasks') renderMyTasks();
+      if (btn.dataset.tab === 'dashboard') renderDashboard();
     });
   });
 }
@@ -240,12 +275,14 @@ async function renderMyTasks() {
 
   const recordIds = await table.getRecordIdList();
   const showAll = document.getElementById('filter-status').value === 'everything';
+  const viewScopeEl = document.getElementById('view-scope');
+  const viewingAll = isAdmin && viewScopeEl && viewScopeEl.value === 'all';
   const myTasks = [];
 
   for (const recId of recordIds) {
     const assignee = await table.getCellValue(assigneeFieldId, recId);
     const isMine = Array.isArray(assignee) && assignee.some(p => p.id === currentUserId);
-    if (!isMine) continue;
+    if (!viewingAll && !isMine) continue;
 
     const status = (await table.getCellValue(statusFieldId, recId))?.text || 'Chưa nhận';
     if (!showAll && (status === 'Hoàn thành' || status === 'Từ chối')) continue;
@@ -257,6 +294,8 @@ async function renderMyTasks() {
       deadline: await table.getCellValue(deadlineFieldId, recId),
       priority: (await table.getCellValue(priorityFieldId, recId))?.text || '',
       status,
+      assigneeName: Array.isArray(assignee) && assignee[0] ? assignee[0].name : '—',
+      isMine,
     });
   }
 
@@ -271,6 +310,9 @@ async function renderMyTasks() {
     card.className = 'task-card';
     const deadlineStr = t.deadline ? new Date(t.deadline).toLocaleDateString('vi-VN') : '—';
     const overdue = t.deadline && t.deadline < Date.now() && t.status !== 'Hoàn thành';
+    // Ở chế độ "Toàn bộ team", nút thao tác chỉ hiện cho đúng task của mình
+    // (giống cơ chế "nút chỉ hiện cho người có quyền" bên hệ thống Finance).
+    const showActions = t.isMine && t.status !== 'Hoàn thành' && t.status !== 'Từ chối';
 
     card.innerHTML = `
       <div class="task-title">${t.name || '(chưa đặt tên)'}</div>
@@ -279,9 +321,10 @@ async function renderMyTasks() {
         <span class="badge badge-status">${t.status}</span>
         <span class="badge ${overdue ? 'badge-red' : ''}">Hạn: ${deadlineStr}</span>
         <span class="badge">${t.priority}</span>
+        ${viewingAll ? `<span class="badge">👤 ${t.assigneeName}</span>` : ''}
       </div>
       <div style="margin-top:8px;">
-        ${t.status !== 'Hoàn thành' && t.status !== 'Từ chối' ? `
+        ${showActions ? `
           <button class="btn-small" data-action="progress" data-id="${t.recId}">Bắt đầu làm</button>
           <button class="btn-small done" data-action="done" data-id="${t.recId}">Hoàn thành</button>
         ` : ''}
@@ -298,6 +341,63 @@ async function renderMyTasks() {
       await table.setCellValue(statusFieldId, recId, { text: newStatus });
       renderMyTasks();
     });
+  });
+}
+
+async function renderDashboard() {
+  const dashEl = document.getElementById('dash-content');
+  dashEl.innerHTML = '<div class="empty">Đang tải...</div>';
+
+  const nameFieldId = await getFieldIdByName(table, FIELD_NAME);
+  const assigneeFieldId = await getFieldIdByName(table, FIELD_ASSIGNEE);
+  const deadlineFieldId = await getFieldIdByName(table, FIELD_DEADLINE);
+  const statusFieldId = await getFieldIdByName(table, FIELD_STATUS);
+
+  const recordIds = await table.getRecordIdList();
+  const byAssignee = new Map(); // name -> { total, done, tasks: [] }
+
+  for (const recId of recordIds) {
+    const assignee = await table.getCellValue(assigneeFieldId, recId);
+    const assigneeName = Array.isArray(assignee) && assignee[0] ? assignee[0].name : '(chưa gán)';
+    const status = (await table.getCellValue(statusFieldId, recId))?.text || 'Chưa nhận';
+    const name = await table.getCellValue(nameFieldId, recId);
+    const deadline = await table.getCellValue(deadlineFieldId, recId);
+
+    if (!byAssignee.has(assigneeName)) byAssignee.set(assigneeName, { total: 0, done: 0, tasks: [] });
+    const entry = byAssignee.get(assigneeName);
+    entry.total++;
+    if (status === 'Hoàn thành') entry.done++;
+    entry.tasks.push({ name, status, deadline });
+  }
+
+  if (byAssignee.size === 0) {
+    dashEl.innerHTML = '<div class="empty">Chưa có task nào trong hệ thống.</div>';
+    return;
+  }
+
+  dashEl.innerHTML = '';
+  // Sắp theo số việc chưa xong nhiều nhất lên trước
+  const sorted = Array.from(byAssignee.entries()).sort((a, b) => (b[1].total - b[1].done) - (a[1].total - a[1].done));
+
+  sorted.forEach(([person, data]) => {
+    const group = document.createElement('div');
+    group.className = 'dash-group';
+    const pending = data.tasks.filter(t => t.status !== 'Hoàn thành' && t.status !== 'Từ chối');
+    group.innerHTML = `
+      <div class="dash-group-title">
+        <span>${person}</span>
+        <span>${data.done}/${data.total} xong</span>
+      </div>
+      ${pending.length === 0
+        ? '<div class="dash-row" style="color:#2ba471;">Đã xong hết</div>'
+        : pending.map(t => {
+            const overdue = t.deadline && t.deadline < Date.now();
+            const dStr = t.deadline ? new Date(t.deadline).toLocaleDateString('vi-VN') : '—';
+            return `<div class="dash-row">${t.name || '(chưa đặt tên)'} — <span class="badge badge-status">${t.status}</span> ${overdue ? `<span style="color:#d54941;">(Quá hạn: ${dStr})</span>` : `(Hạn: ${dStr})`}</div>`;
+          }).join('')
+      }
+    `;
+    dashEl.appendChild(group);
   });
 }
 
