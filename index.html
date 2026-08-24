@@ -269,14 +269,6 @@ async function loadPeopleForAssigneeDropdown() {
     opt.value = p.employeeRecordId; opt.textContent = p.name;
     sel.appendChild(opt);
   });
-
-  // DEBUG TẠM: in ra cấu trúc thật của 1 cell Person từ bảng nhân sự, để xác định đúng key tên hiển thị.
-  if (recordIds.length > 0) {
-    const rawSample = await membersTable.getCellValue(personFieldId, recordIds[0]);
-    document.getElementById('debug-info').innerText +=
-      ' | RAW nhân sự đầu: ' + JSON.stringify(rawSample) +
-      ' | myEmployeeRecordId: ' + myEmployeeRecordId;
-  }
 }
 
 async function submitTask() {
@@ -342,13 +334,6 @@ async function renderMyTasks() {
   const viewScopeEl = document.getElementById('view-scope');
   const viewingAll = isAdmin && viewScopeEl && viewScopeEl.value === 'all';
   const myTasks = [];
-
-  // DEBUG TẠM: in RAW của field Người nhận (Link field) trên record Task đầu tiên
-  if (recordIds.length > 0) {
-    const rawAssignee = await table.getCellValue(assigneeFieldId, recordIds[0]);
-    document.getElementById('debug-info').innerText +=
-      ' | RAW Người nhận (Task đầu): ' + JSON.stringify(rawAssignee);
-  }
 
   for (const recId of recordIds) {
     const assignee = await table.getCellValue(assigneeFieldId, recId);
