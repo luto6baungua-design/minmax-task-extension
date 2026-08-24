@@ -298,7 +298,7 @@ async function submitTask() {
     const fields = {};
     fields[nameFieldId] = name;
     fields[descFieldId] = desc;
-    fields[assigneeFieldId] = [assigneeId]; // assigneeId là employeeRecordId (Link field)
+    fields[assigneeFieldId] = { recordIds: [assigneeId] }; // đúng định dạng Link field đã xác nhận qua RAW debug
     fields[assignerFieldId] = [{ id: currentUserId }]; // Người giao vẫn là Person field
     fields[priorityFieldId] = { text: priority };
     fields[statusFieldId] = { text: 'Chưa nhận' };
