@@ -310,8 +310,6 @@ async function submitTask() {
     const fields = {};
     fields[nameFieldId] = name;
     fields[descFieldId] = desc;
-    fields[assignerFieldId] = { recordIds: [myEmployeeRecordId] }; // Người giao (Link field)
-    fields[approverFieldId] = { recordIds: [myEmployeeRecordId] }; // Người duyệt (Link field) — mặc định = người tạo task
     fields[priorityFieldId] = priority;
     fields[statusFieldId] = 'To Do';
     fields[assignDateFieldId] = Date.now();
@@ -320,10 +318,13 @@ async function submitTask() {
     const addResult = await table.addRecord({ fields });
     const newRecordId = addResult.recordId || addResult.record_id || addResult;
 
-    // Ghi riêng field Người nhận (Link field) sau khi có recordId, để cô lập lỗi nếu có
+    // Ghi các field Link (Người nhận / Người giao / Người duyệt) riêng sau khi có recordId,
+    // vì addRecord không xử lý được định dạng Link field trực tiếp trong fields.
     let assigneeSetError = '';
     try {
       await table.setCellValue(assigneeFieldId, newRecordId, { recordIds: [assigneeId] });
+      await table.setCellValue(assignerFieldId, newRecordId, { recordIds: [myEmployeeRecordId] });
+      await table.setCellValue(approverFieldId, newRecordId, { recordIds: [myEmployeeRecordId] });
     } catch (e2) {
       assigneeSetError = e2.message;
     }
