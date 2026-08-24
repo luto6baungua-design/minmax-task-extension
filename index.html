@@ -449,23 +449,28 @@ async function renderMyTasks() {
       const statusFieldId = await getFieldIdByName(table, FIELD_STATUS);
       const action = btn.dataset.action;
 
-      if (action === 'self') {
-        await table.setCellValue(statusFieldId, recId, { text: btn.dataset.next });
-      } else if (action === 'approve') {
-        await table.setCellValue(statusFieldId, recId, { text: 'Hoàn thành' });
-        await appendNote(recId, 'Đã duyệt.');
-      } else if (action === 'revise') {
-        const reason = prompt('Lý do yêu cầu làm lại (bắt buộc):');
-        if (!reason) return;
-        await table.setCellValue(statusFieldId, recId, { text: 'Làm lại' });
-        await appendNote(recId, 'Yêu cầu làm lại: ' + reason);
-      } else if (action === 'reject') {
-        const reason = prompt('Lý do từ chối (bắt buộc):');
-        if (!reason) return;
-        await table.setCellValue(statusFieldId, recId, { text: 'Từ chối' });
-        await appendNote(recId, 'Từ chối: ' + reason);
+      try {
+        if (action === 'self') {
+          await table.setCellValue(statusFieldId, recId, { text: btn.dataset.next });
+        } else if (action === 'approve') {
+          await table.setCellValue(statusFieldId, recId, { text: 'Hoàn thành' });
+          await appendNote(recId, 'Đã duyệt.');
+        } else if (action === 'revise') {
+          const reason = prompt('Lý do yêu cầu làm lại (bắt buộc):');
+          if (!reason) return;
+          await table.setCellValue(statusFieldId, recId, { text: 'Làm lại' });
+          await appendNote(recId, 'Yêu cầu làm lại: ' + reason);
+        } else if (action === 'reject') {
+          const reason = prompt('Lý do từ chối (bắt buộc):');
+          if (!reason) return;
+          await table.setCellValue(statusFieldId, recId, { text: 'Từ chối' });
+          await appendNote(recId, 'Từ chối: ' + reason);
+        }
+        renderMyTasks();
+      } catch (e) {
+        alert('Lỗi khi cập nhật: ' + e.message);
+        console.error(e);
       }
-      renderMyTasks();
     });
   });
 }
