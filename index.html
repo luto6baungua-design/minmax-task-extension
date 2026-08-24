@@ -148,6 +148,17 @@ const FIELD_PRIORITY = 'Độ ưu tiên';
 const FIELD_STATUS = 'Trạng thái';
 const FIELD_ASSIGN_DATE = 'Ngày giao';
 
+// Bảng nhân sự dùng làm nguồn danh sách "Người nhận" — dùng thẳng Table ID để tránh trùng tên bảng
+const MEMBERS_TABLE_ID = 'tblYi1llTL1iwhon';
+const MEMBERS_PERSON_FIELD = 'Họ và tên nhân sự';
+
+async function getTableByName(name) {
+  const metaList = await bitable.base.getTableMetaList();
+  const found = metaList.find(t => t.name === name);
+  if (!found) throw new Error('Không tìm thấy bảng: ' + name);
+  return await bitable.base.getTableById(found.id);
+}
+
 async function getFieldIdByName(tbl, name) {
   const metaList = await tbl.getFieldMetaList();
   const found = metaList.find(f => f.name === name);
@@ -210,21 +221,17 @@ async function init() {
   });
 }
 
-// Lấy danh sách người dùng có trong field Person "Người nhận" trong toàn bộ record hiện có,
-// để đổ vào dropdown chọn người nhận. (Cách đơn giản không cần Server API / Contact API)
+// Lấy danh sách nhân sự từ bảng "Thông tin nhân sự" (field Person) để đổ vào dropdown Người nhận.
 async function loadPeopleForAssigneeDropdown() {
-  const assigneeFieldId = await getFieldIdByName(table, FIELD_ASSIGNEE);
-  const assignerFieldId = await getFieldIdByName(table, FIELD_ASSIGNER);
-  const recordIds = await table.getRecordIdList();
-  const seen = new Map();
+  const membersTable = await bitable.base.getTableById(MEMBERS_TABLE_ID);
+  const personFieldId = await getFieldIdByName(membersTable, MEMBERS_PERSON_FIELD);
+  const recordIds = await membersTable.getRecordIdList();
 
+  const seen = new Map();
   for (const recId of recordIds) {
-    for (const fid of [assigneeFieldId, assignerFieldId]) {
-      const cellValue = await table.getCellValue(fid, recId);
-      if (Array.isArray(cellValue)) {
-        cellValue.forEach(p => { if (p && p.id) seen.set(p.id, p.name || p.id); });
-      }
-    }
+    const cellValue = await membersTable.getCellValue(personFieldId, recId);
+    const arr = Array.isArray(cellValue) ? cellValue : (cellValue ? [cellValue] : []);
+    arr.forEach(p => { if (p && p.id) seen.set(p.id, personName([p])); });
   }
   peopleCache = Array.from(seen, ([id, name]) => ({ id, name }));
 
@@ -235,9 +242,12 @@ async function loadPeopleForAssigneeDropdown() {
     sel.appendChild(opt);
   });
 
-  // Nếu Base chưa có record nào -> dropdown rỗng. Cách xử lý: thêm sẵn 1 record mẫu
-  // qua giao diện Base trước, hoặc gõ trực tiếp trong bảng Người nhận ở cột Base 1 lần
-  // để nạp danh sách nhân sự, sau đó Extension sẽ tự nhận diện.
+  // DEBUG TẠM: in ra cấu trúc thật của 1 cell Person từ bảng nhân sự, để xác định đúng key tên hiển thị
+  // nếu dropdown vẫn hiện ID thay vì tên. Sau khi ổn định mình sẽ xoá dòng debug này.
+  if (recordIds.length > 0) {
+    const rawSample = await membersTable.getCellValue(personFieldId, recordIds[0]);
+    document.getElementById('debug-info').innerText += ' | RAW nhân sự đầu: ' + JSON.stringify(rawSample);
+  }
 }
 
 async function submitTask() {
