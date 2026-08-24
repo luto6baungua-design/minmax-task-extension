@@ -170,6 +170,15 @@ async function getFieldIdByName(tbl, name) {
   return found.id;
 }
 
+// Single Select field cần ghi bằng {id: optionId} theo ID nội bộ, không phải text thuần.
+// Hàm này tra đúng optionId theo tên hiển thị.
+async function getOptionValue(tbl, fieldId, text) {
+  const metaList = await tbl.getFieldMetaList();
+  const meta = metaList.find(f => f.id === fieldId);
+  const opt = meta?.property?.options?.find(o => o.name === text || o.text === text);
+  return opt ? { id: opt.id, text: opt.name || opt.text } : text;
+}
+
 // Text field trong Lark Base trả về dạng mảng segment (rich text), không phải string thuần.
 // Hàm này chuyển mọi dạng trả về (string / number / mảng segment / object đơn) thành text hiển thị được.
 function cellText(val) {
@@ -322,8 +331,8 @@ async function submitTask() {
 
     await trySet('Tên Task', nameFieldId, name);
     await trySet('Mô tả', descFieldId, desc);
-    await trySet('Độ ưu tiên', priorityFieldId, priority);
-    await trySet('Trạng thái', statusFieldId, 'To Do');
+    await trySet('Độ ưu tiên', priorityFieldId, await getOptionValue(table, priorityFieldId, priority));
+    await trySet('Trạng thái', statusFieldId, await getOptionValue(table, statusFieldId, 'To Do'));
     await trySet('Ngày giao', assignDateFieldId, Date.now());
     if (deadline) await trySet('Hạn chót', deadlineFieldId, new Date(deadline).getTime());
     await trySet('Người nhận', assigneeFieldId, { recordIds: [assigneeId] });
@@ -462,15 +471,17 @@ async function renderMyTasks() {
 
         if (action === 'self') {
           console.log('[DEBUG] Đang ghi trạng thái mới:', btn.dataset.next);
-          await table.setCellValue(statusFieldId, recId, btn.dataset.next);
+          const val = await getOptionValue(table, statusFieldId, btn.dataset.next);
+          console.log('[DEBUG] Giá trị sẽ ghi:', JSON.stringify(val));
+          await table.setCellValue(statusFieldId, recId, val);
           console.log('[DEBUG] Ghi xong, không có lỗi throw.');
         } else if (action === 'approve') {
-          await table.setCellValue(statusFieldId, recId, 'Done');
+          await table.setCellValue(statusFieldId, recId, await getOptionValue(table, statusFieldId, 'Done'));
           await appendNote(recId, 'Đã duyệt.');
         } else if (action === 'revise') {
           const reason = prompt('Lý do yêu cầu làm lại (bắt buộc):');
           if (!reason) return;
-          await table.setCellValue(statusFieldId, recId, 'Chưa đạt/ Làm lại');
+          await table.setCellValue(statusFieldId, recId, await getOptionValue(table, statusFieldId, 'Chưa đạt/ Làm lại'));
           await appendNote(recId, 'Yêu cầu làm lại: ' + reason);
         }
 
