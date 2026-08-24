@@ -309,8 +309,8 @@ async function submitTask() {
     fields[nameFieldId] = name;
     fields[descFieldId] = desc;
     fields[assignerFieldId] = [{ id: currentUserId }]; // Người giao vẫn là Person field
-    fields[priorityFieldId] = { text: priority };
-    fields[statusFieldId] = { text: 'Chưa nhận' };
+    fields[priorityFieldId] = priority;
+    fields[statusFieldId] = 'Chưa nhận';
     fields[assignDateFieldId] = Date.now();
     if (deadline) fields[deadlineFieldId] = new Date(deadline).getTime();
 
@@ -457,20 +457,20 @@ async function renderMyTasks() {
 
         if (action === 'self') {
           console.log('[DEBUG] Đang ghi trạng thái mới:', btn.dataset.next);
-          await table.setCellValue(statusFieldId, recId, { text: btn.dataset.next });
+          await table.setCellValue(statusFieldId, recId, btn.dataset.next);
           console.log('[DEBUG] Ghi xong, không có lỗi throw.');
         } else if (action === 'approve') {
-          await table.setCellValue(statusFieldId, recId, { text: 'Hoàn thành' });
+          await table.setCellValue(statusFieldId, recId, 'Hoàn thành');
           await appendNote(recId, 'Đã duyệt.');
         } else if (action === 'revise') {
           const reason = prompt('Lý do yêu cầu làm lại (bắt buộc):');
           if (!reason) return;
-          await table.setCellValue(statusFieldId, recId, { text: 'Làm lại' });
+          await table.setCellValue(statusFieldId, recId, 'Làm lại');
           await appendNote(recId, 'Yêu cầu làm lại: ' + reason);
         } else if (action === 'reject') {
           const reason = prompt('Lý do từ chối (bắt buộc):');
           if (!reason) return;
-          await table.setCellValue(statusFieldId, recId, { text: 'Từ chối' });
+          await table.setCellValue(statusFieldId, recId, 'Từ chối');
           await appendNote(recId, 'Từ chối: ' + reason);
         }
 
