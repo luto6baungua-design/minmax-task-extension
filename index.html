@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MinMax Green - Task Manager</title>
+<script src="https://unpkg.com/@lark-base-open/js-sdk@0.5.0/dist/index.umd.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    margin: 0;
+    padding: 12px;
+    background: #f7f8fa;
+    color: #1f2329;
+    font-size: 14px;
+  }
+  .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .tab-btn {
+    padding: 6px 14px; border-radius: 6px; border: 1px solid #d0d3d6;
+    background: #fff; cursor: pointer; font-size: 13px;
+  }
+  .tab-btn.active { background: #3370ff; color: #fff; border-color: #3370ff; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  label { display: block; margin: 10px 0 4px; font-weight: 500; font-size: 13px; }
+  input, textarea, select {
+    width: 100%; padding: 7px 9px; border: 1px solid #d0d3d6; border-radius: 6px;
+    font-size: 13px; background: #fff;
+  }
+  textarea { min-height: 60px; resize: vertical; }
+  .btn-primary {
+    margin-top: 14px; background: #3370ff; color: #fff; border: none;
+    padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  }
+  .btn-primary:disabled { background: #b3c9ff; cursor: not-allowed; }
+  .btn-small {
+    padding: 4px 10px; border-radius: 5px; border: 1px solid #d0d3d6;
+    background: #fff; cursor: pointer; font-size: 12px; margin-right: 6px;
+  }
+  .btn-small.done { background: #2ba471; color: #fff; border-color: #2ba471; }
+  .task-card {
+    background: #fff; border: 1px solid #e5e6eb; border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 8px;
+  }
+  .task-title { font-weight: 600; font-size: 14px; }
+  .task-meta { font-size: 12px; color: #646a73; margin-top: 4px; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px;
+    margin-right: 6px;
+  }
+  .badge-status { background: #eef1f5; color: #333; }
+  .badge-red { background: #ffece8; color: #d54941; }
+  .badge-green { background: #e8f8ee; color: #2ba471; }
+  .toolbar { margin-bottom: 10px; display:flex; align-items:center; gap:8px; }
+  .msg { font-size: 12px; color: #d54941; margin-top: 6px; }
+  .debug { font-size: 10px; color: #aaa; margin-top: 20px; word-break: break-all; }
+  .empty { color: #999; text-align: center; padding: 20px 0; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="assign">Giao việc</button>
+  <button class="tab-btn" data-tab="mytasks">Việc của tôi</button>
+</div>
+
+<!-- TAB 1: GIAO VIỆC -->
+<div class="panel active" id="panel-assign">
+  <label>Tên Task *</label>
+  <input id="f-name" type="text" placeholder="VD: Lập báo cáo kiểm kê KNK quý 3" />
+
+  <label>Mô tả công việc</label>
+  <textarea id="f-desc" placeholder="Chi tiết yêu cầu..."></textarea>
+
+  <label>Người nhận *</label>
+  <select id="f-assignee"><option value="">-- Chọn người nhận --</option></select>
+
+  <label>Hạn chót</label>
+  <input id="f-deadline" type="date" />
+
+  <label>Độ ưu tiên</label>
+  <select id="f-priority">
+    <option value="Trung bình">Trung bình</option>
+    <option value="Thấp">Thấp</option>
+    <option value="Cao">Cao</option>
+    <option value="Khẩn cấp">Khẩn cấp</option>
+  </select>
+
+  <button class="btn-primary" id="btn-submit">+ Giao Task</button>
+  <div class="msg" id="assign-msg"></div>
+</div>
+
+<!-- TAB 2: VIỆC CỦA TÔI -->
+<div class="panel" id="panel-mytasks">
+  <div class="toolbar">
+    <label style="margin:0;">Trạng thái:</label>
+    <select id="filter-status" style="width:auto;">
+      <option value="all">Tất cả (chưa xong)</option>
+      <option value="everything">Tất cả (kể cả xong)</option>
+    </select>
+  </div>
+  <div id="task-list"></div>
+</div>
+
+<div class="debug" id="debug-info"></div>
+
+<script>
+const { bitable } = window.WrapperSDK || window; // fallback nếu CDN gán tên khác
+// Bản UMD của @lark-base-open/js-sdk export global là "block-basekit-sdk" hoặc "bitable" tùy version.
+// Nếu gặp lỗi "bitable is not defined", đổi dòng trên thành đúng biến CDN cung cấp (kiểm tra Console).
+
+let table = null;
+let currentUserId = null;
+let peopleCache = []; // danh sách người trong tổ chức (lấy từ field Person để chọn)
+
+const FIELD_NAME = 'Tên Task';
+const FIELD_DESC = 'Mô tả công việc';
+const FIELD_ASSIGNEE = 'Người nhận';
+const FIELD_ASSIGNER = 'Người giao';
+const FIELD_DEADLINE = 'Hạn chót';
+const FIELD_PRIORITY = 'Độ ưu tiên';
+const FIELD_STATUS = 'Trạng thái';
+const FIELD_ASSIGN_DATE = 'Ngày giao';
+
+async function getFieldIdByName(tbl, name) {
+  const metaList = await tbl.getFieldMetaList();
+  const found = metaList.find(f => f.name === name);
+  if (!found) throw new Error('Không tìm thấy field: ' + name);
+  return found.id;
+}
+
+async function init() {
+  table = await bitable.base.getActiveTable();
+  currentUserId = await bitable.bridge.getUserId();
+  document.getElementById('debug-info').innerText = 'User ID của bạn: ' + currentUserId;
+
+  await loadPeopleForAssigneeDropdown();
+  await renderMyTasks();
+
+  document.getElementById('btn-submit').addEventListener('click', submitTask);
+  document.getElementById('filter-status').addEventListener('change', renderMyTasks);
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+      if (btn.dataset.tab === 'mytasks') renderMyTasks();
+    });
+  });
+}
+
+// Lấy danh sách người dùng có trong field Person "Người nhận" trong toàn bộ record hiện có,
+// để đổ vào dropdown chọn người nhận. (Cách đơn giản không cần Server API / Contact API)
+async function loadPeopleForAssigneeDropdown() {
+  const assigneeFieldId = await getFieldIdByName(table, FIELD_ASSIGNEE);
+  const assignerFieldId = await getFieldIdByName(table, FIELD_ASSIGNER);
+  const recordIds = await table.getRecordIdList();
+  const seen = new Map();
+
+  for (const recId of recordIds) {
+    for (const fid of [assigneeFieldId, assignerFieldId]) {
+      const cellValue = await table.getCellValue(fid, recId);
+      if (Array.isArray(cellValue)) {
+        cellValue.forEach(p => { if (p && p.id) seen.set(p.id, p.name || p.id); });
+      }
+    }
+  }
+  peopleCache = Array.from(seen, ([id, name]) => ({ id, name }));
+
+  const sel = document.getElementById('f-assignee');
+  peopleCache.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id; opt.textContent = p.name;
+    sel.appendChild(opt);
+  });
+
+  // Nếu Base chưa có record nào -> dropdown rỗng. Cách xử lý: thêm sẵn 1 record mẫu
+  // qua giao diện Base trước, hoặc gõ trực tiếp trong bảng Người nhận ở cột Base 1 lần
+  // để nạp danh sách nhân sự, sau đó Extension sẽ tự nhận diện.
+}
+
+async function submitTask() {
+  const name = document.getElementById('f-name').value.trim();
+  const desc = document.getElementById('f-desc').value.trim();
+  const assigneeId = document.getElementById('f-assignee').value;
+  const deadline = document.getElementById('f-deadline').value;
+  const priority = document.getElementById('f-priority').value;
+  const msgEl = document.getElementById('assign-msg');
+  msgEl.innerText = '';
+
+  if (!name || !assigneeId) {
+    msgEl.innerText = 'Vui lòng nhập Tên Task và chọn Người nhận.';
+    return;
+  }
+
+  const nameFieldId = await getFieldIdByName(table, FIELD_NAME);
+  const descFieldId = await getFieldIdByName(table, FIELD_DESC);
+  const assigneeFieldId = await getFieldIdByName(table, FIELD_ASSIGNEE);
+  const assignerFieldId = await getFieldIdByName(table, FIELD_ASSIGNER);
+  const deadlineFieldId = await getFieldIdByName(table, FIELD_DEADLINE);
+  const priorityFieldId = await getFieldIdByName(table, FIELD_PRIORITY);
+  const statusFieldId = await getFieldIdByName(table, FIELD_STATUS);
+  const assignDateFieldId = await getFieldIdByName(table, FIELD_ASSIGN_DATE);
+
+  const fields = {};
+  fields[nameFieldId] = name;
+  fields[descFieldId] = desc;
+  fields[assigneeFieldId] = [{ id: assigneeId }];
+  fields[assignerFieldId] = [{ id: currentUserId }];
+  fields[priorityFieldId] = { text: priority };
+  fields[statusFieldId] = { text: 'Chưa nhận' };
+  fields[assignDateFieldId] = Date.now();
+  if (deadline) fields[deadlineFieldId] = new Date(deadline).getTime();
+
+  try {
+    await table.addRecord({ fields });
+    msgEl.style.color = '#2ba471';
+    msgEl.innerText = 'Đã giao task thành công!';
+    document.getElementById('f-name').value = '';
+    document.getElementById('f-desc').value = '';
+    document.getElementById('f-deadline').value = '';
+  } catch (e) {
+    msgEl.style.color = '#d54941';
+    msgEl.innerText = 'Lỗi khi tạo task: ' + e.message + ' (kiểm tra định dạng field trong console)';
+    console.error(e);
+  }
+}
+
+async function renderMyTasks() {
+  const listEl = document.getElementById('task-list');
+  listEl.innerHTML = '<div class="empty">Đang tải...</div>';
+
+  const assigneeFieldId = await getFieldIdByName(table, FIELD_ASSIGNEE);
+  const nameFieldId = await getFieldIdByName(table, FIELD_NAME);
+  const descFieldId = await getFieldIdByName(table, FIELD_DESC);
+  const deadlineFieldId = await getFieldIdByName(table, FIELD_DEADLINE);
+  const priorityFieldId = await getFieldIdByName(table, FIELD_PRIORITY);
+  const statusFieldId = await getFieldIdByName(table, FIELD_STATUS);
+
+  const recordIds = await table.getRecordIdList();
+  const showAll = document.getElementById('filter-status').value === 'everything';
+  const myTasks = [];
+
+  for (const recId of recordIds) {
+    const assignee = await table.getCellValue(assigneeFieldId, recId);
+    const isMine = Array.isArray(assignee) && assignee.some(p => p.id === currentUserId);
+    if (!isMine) continue;
+
+    const status = (await table.getCellValue(statusFieldId, recId))?.text || 'Chưa nhận';
+    if (!showAll && (status === 'Hoàn thành' || status === 'Từ chối')) continue;
+
+    myTasks.push({
+      recId,
+      name: await table.getCellValue(nameFieldId, recId),
+      desc: await table.getCellValue(descFieldId, recId),
+      deadline: await table.getCellValue(deadlineFieldId, recId),
+      priority: (await table.getCellValue(priorityFieldId, recId))?.text || '',
+      status,
+    });
+  }
+
+  if (myTasks.length === 0) {
+    listEl.innerHTML = '<div class="empty">Không có task nào.</div>';
+    return;
+  }
+
+  listEl.innerHTML = '';
+  myTasks.forEach(t => {
+    const card = document.createElement('div');
+    card.className = 'task-card';
+    const deadlineStr = t.deadline ? new Date(t.deadline).toLocaleDateString('vi-VN') : '—';
+    const overdue = t.deadline && t.deadline < Date.now() && t.status !== 'Hoàn thành';
+
+    card.innerHTML = `
+      <div class="task-title">${t.name || '(chưa đặt tên)'}</div>
+      <div class="task-meta">${t.desc || ''}</div>
+      <div class="task-meta">
+        <span class="badge badge-status">${t.status}</span>
+        <span class="badge ${overdue ? 'badge-red' : ''}">Hạn: ${deadlineStr}</span>
+        <span class="badge">${t.priority}</span>
+      </div>
+      <div style="margin-top:8px;">
+        ${t.status !== 'Hoàn thành' && t.status !== 'Từ chối' ? `
+          <button class="btn-small" data-action="progress" data-id="${t.recId}">Bắt đầu làm</button>
+          <button class="btn-small done" data-action="done" data-id="${t.recId}">Hoàn thành</button>
+        ` : ''}
+      </div>
+    `;
+    listEl.appendChild(card);
+  });
+
+  listEl.querySelectorAll('button[data-action]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const recId = btn.dataset.id;
+      const newStatus = btn.dataset.action === 'done' ? 'Hoàn thành' : 'Đang làm';
+      const statusFieldId = await getFieldIdByName(table, FIELD_STATUS);
+      await table.setCellValue(statusFieldId, recId, { text: newStatus });
+      renderMyTasks();
+    });
+  });
+}
+
+init().catch(err => {
+  document.body.innerHTML = '<div class="msg">Lỗi khởi tạo: ' + err.message + '</div>';
+  console.error(err);
+});
+</script>
+</body>
+</html>
