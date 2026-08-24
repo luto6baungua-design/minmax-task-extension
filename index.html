@@ -307,10 +307,7 @@ async function submitTask() {
     const statusFieldId = await getFieldIdByName(table, FIELD_STATUS);
     const assignDateFieldId = await getFieldIdByName(table, FIELD_ASSIGN_DATE);
 
-    const fields = {};
-    fields[nameFieldId] = name;
-
-    const addResult = await table.addRecord({ fields });
+    const addResult = await table.addRecord({ [nameFieldId]: name });
     const newRecordId = addResult.recordId || addResult.record_id || addResult;
 
     // Ghi từng field riêng lẻ để cô lập chính xác field nào gây lỗi (nếu có)
