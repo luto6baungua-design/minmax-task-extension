@@ -298,16 +298,33 @@ async function submitTask() {
     const fields = {};
     fields[nameFieldId] = name;
     fields[descFieldId] = desc;
-    fields[assigneeFieldId] = { recordIds: [assigneeId] }; // đúng định dạng Link field đã xác nhận qua RAW debug
     fields[assignerFieldId] = [{ id: currentUserId }]; // Người giao vẫn là Person field
     fields[priorityFieldId] = { text: priority };
     fields[statusFieldId] = { text: 'Chưa nhận' };
     fields[assignDateFieldId] = Date.now();
     if (deadline) fields[deadlineFieldId] = new Date(deadline).getTime();
 
-    await table.addRecord({ fields });
-    msgEl.style.color = '#2ba471';
-    msgEl.innerText = 'Đã giao task thành công!';
+    const addResult = await table.addRecord({ fields });
+    const newRecordId = addResult.recordId || addResult.record_id || addResult;
+
+    // Ghi riêng field Người nhận (Link field) sau khi có recordId, để cô lập lỗi nếu có
+    let assigneeSetError = '';
+    try {
+      await table.setCellValue(assigneeFieldId, newRecordId, { recordIds: [assigneeId] });
+    } catch (e2) {
+      assigneeSetError = e2.message;
+    }
+    // Đọc lại ngay để kiểm tra có thực sự lưu không
+    const checkVal = await table.getCellValue(assigneeFieldId, newRecordId);
+
+    if (!assigneeSetError && extractLinkedRecordIds(checkVal).length > 0) {
+      msgEl.style.color = '#2ba471';
+      msgEl.innerText = 'Đã giao task thành công!';
+    } else {
+      msgEl.style.color = '#d54941';
+      msgEl.innerText = 'Tạo task OK nhưng gán Người nhận thất bại. Lỗi: ' +
+        (assigneeSetError || '(không rõ)') + ' | Giá trị đọc lại: ' + JSON.stringify(checkVal);
+    }
     document.getElementById('f-name').value = '';
     document.getElementById('f-desc').value = '';
     document.getElementById('f-deadline').value = '';
