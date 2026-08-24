@@ -131,7 +131,8 @@ import { bitable } from 'https://esm.sh/@lark-base-open/js-sdk@0.5.0';
 let table = null;
 let currentUserId = null;
 let isAdmin = false;
-let peopleCache = []; // danh sách người trong tổ chức (lấy từ field Person để chọn)
+let peopleCache = []; // [{personId, employeeRecordId, name}]
+let myEmployeeRecordId = null; // recordId của chính mình trong bảng Thông tin nhân sự
 
 // Danh sách User ID được coi là Admin (xem toàn bộ task của team).
 // Cách lấy ID của 1 người: cho họ mở Extension này 1 lần, đọc dòng "User ID của bạn" ở cuối trang.
@@ -191,6 +192,29 @@ function personName(cellVal) {
   return first.name || first.en_name || first.full_name || first.id || '(chưa gán)';
 }
 
+// Link field (liên kết bản ghi) trả về định dạng có thể khác nhau tuỳ version SDK.
+// Hàm này thử nhiều dạng phổ biến để lấy ra danh sách recordId được link tới.
+function extractLinkedRecordIds(val) {
+  if (!val) return [];
+  const arr = Array.isArray(val) ? val : [val];
+  const ids = [];
+  arr.forEach(item => {
+    if (typeof item === 'string') ids.push(item);
+    else if (item && Array.isArray(item.recordIds)) ids.push(...item.recordIds);
+    else if (item && item.recordId) ids.push(item.recordId);
+    else if (item && item.id) ids.push(item.id);
+  });
+  return ids;
+}
+
+// Lấy text hiển thị (tên) từ Link field, dựa vào property "text" nếu có
+function extractLinkedText(val) {
+  if (!val) return '(chưa gán)';
+  const arr = Array.isArray(val) ? val : [val];
+  const names = arr.map(item => (item && typeof item.text === 'string') ? item.text : '').filter(Boolean);
+  return names.length ? names.join(', ') : '(chưa gán)';
+}
+
 async function init() {
   table = await bitable.base.getActiveTable();
   currentUserId = await bitable.bridge.getUserId();
@@ -221,32 +245,37 @@ async function init() {
   });
 }
 
-// Lấy danh sách nhân sự từ bảng "Thông tin nhân sự" (field Person) để đổ vào dropdown Người nhận.
+// Lấy danh sách nhân sự từ bảng "Thông tin nhân sự" để đổ vào dropdown Người nhận.
+// Mỗi người lưu kèm employeeRecordId (recordId của dòng trong bảng Thông tin nhân sự),
+// vì field "Người nhận" bên Tasks là Link field trỏ tới record đó, không lưu trực tiếp person id.
 async function loadPeopleForAssigneeDropdown() {
   const membersTable = await bitable.base.getTableById(MEMBERS_TABLE_ID);
   const personFieldId = await getFieldIdByName(membersTable, MEMBERS_PERSON_FIELD);
   const recordIds = await membersTable.getRecordIdList();
 
-  const seen = new Map();
+  peopleCache = [];
   for (const recId of recordIds) {
     const cellValue = await membersTable.getCellValue(personFieldId, recId);
     const arr = Array.isArray(cellValue) ? cellValue : (cellValue ? [cellValue] : []);
-    arr.forEach(p => { if (p && p.id) seen.set(p.id, personName([p])); });
+    const p = arr[0];
+    if (!p) continue;
+    peopleCache.push({ personId: p.id, employeeRecordId: recId, name: personName([p]) });
+    if (p.id === currentUserId) myEmployeeRecordId = recId;
   }
-  peopleCache = Array.from(seen, ([id, name]) => ({ id, name }));
 
   const sel = document.getElementById('f-assignee');
   peopleCache.forEach(p => {
     const opt = document.createElement('option');
-    opt.value = p.id; opt.textContent = p.name;
+    opt.value = p.employeeRecordId; opt.textContent = p.name;
     sel.appendChild(opt);
   });
 
-  // DEBUG TẠM: in ra cấu trúc thật của 1 cell Person từ bảng nhân sự, để xác định đúng key tên hiển thị
-  // nếu dropdown vẫn hiện ID thay vì tên. Sau khi ổn định mình sẽ xoá dòng debug này.
+  // DEBUG TẠM: in ra cấu trúc thật của 1 cell Person từ bảng nhân sự, để xác định đúng key tên hiển thị.
   if (recordIds.length > 0) {
     const rawSample = await membersTable.getCellValue(personFieldId, recordIds[0]);
-    document.getElementById('debug-info').innerText += ' | RAW nhân sự đầu: ' + JSON.stringify(rawSample);
+    document.getElementById('debug-info').innerText +=
+      ' | RAW nhân sự đầu: ' + JSON.stringify(rawSample) +
+      ' | myEmployeeRecordId: ' + myEmployeeRecordId;
   }
 }
 
@@ -276,8 +305,8 @@ async function submitTask() {
   const fields = {};
   fields[nameFieldId] = name;
   fields[descFieldId] = desc;
-  fields[assigneeFieldId] = [{ id: assigneeId }];
-  fields[assignerFieldId] = [{ id: currentUserId }];
+  fields[assigneeFieldId] = [assigneeId]; // assigneeId giờ là employeeRecordId (Link field)
+  fields[assignerFieldId] = [{ id: currentUserId }]; // Người giao vẫn là Person field
   fields[priorityFieldId] = { text: priority };
   fields[statusFieldId] = { text: 'Chưa nhận' };
   fields[assignDateFieldId] = Date.now();
@@ -292,7 +321,7 @@ async function submitTask() {
     document.getElementById('f-deadline').value = '';
   } catch (e) {
     msgEl.style.color = '#d54941';
-    msgEl.innerText = 'Lỗi khi tạo task: ' + e.message + ' (kiểm tra định dạng field trong console)';
+    msgEl.innerText = 'Lỗi khi tạo task: ' + e.message + ' (thử đổi fields[assigneeFieldId] = [assigneeId] thành fields[assigneeFieldId] = [{recordIds:[assigneeId]}] nếu vẫn lỗi Link field)';
     console.error(e);
   }
 }
@@ -314,9 +343,17 @@ async function renderMyTasks() {
   const viewingAll = isAdmin && viewScopeEl && viewScopeEl.value === 'all';
   const myTasks = [];
 
+  // DEBUG TẠM: in RAW của field Người nhận (Link field) trên record Task đầu tiên
+  if (recordIds.length > 0) {
+    const rawAssignee = await table.getCellValue(assigneeFieldId, recordIds[0]);
+    document.getElementById('debug-info').innerText +=
+      ' | RAW Người nhận (Task đầu): ' + JSON.stringify(rawAssignee);
+  }
+
   for (const recId of recordIds) {
     const assignee = await table.getCellValue(assigneeFieldId, recId);
-    const isMine = Array.isArray(assignee) && assignee.some(p => p.id === currentUserId);
+    const linkedIds = extractLinkedRecordIds(assignee);
+    const isMine = myEmployeeRecordId && linkedIds.includes(myEmployeeRecordId);
     if (!viewingAll && !isMine) continue;
 
     const status = (await table.getCellValue(statusFieldId, recId))?.text || 'Chưa nhận';
@@ -329,7 +366,7 @@ async function renderMyTasks() {
       deadline: await table.getCellValue(deadlineFieldId, recId),
       priority: (await table.getCellValue(priorityFieldId, recId))?.text || '',
       status,
-      assigneeName: personName(assignee),
+      assigneeName: extractLinkedText(assignee),
       isMine,
     });
   }
@@ -393,7 +430,7 @@ async function renderDashboard() {
 
   for (const recId of recordIds) {
     const assignee = await table.getCellValue(assigneeFieldId, recId);
-    const assigneeName = personName(assignee);
+    const assigneeName = extractLinkedText(assignee);
     const status = (await table.getCellValue(statusFieldId, recId))?.text || 'Chưa nhận';
     const name = cellText(await table.getCellValue(nameFieldId, recId));
     const deadline = await table.getCellValue(deadlineFieldId, recId);
