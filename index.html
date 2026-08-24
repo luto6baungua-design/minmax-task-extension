@@ -393,7 +393,12 @@ async function renderMyTasks() {
     const relevant = isMine || isApprover || viewingAll;
     if (!relevant) continue;
 
-    const status = (await table.getCellValue(statusFieldId, recId))?.text || 'To Do';
+    const rawStatusVal = await table.getCellValue(statusFieldId, recId);
+    if (myTasks.length === 0 && !window.__statusDebugPrinted) {
+      window.__statusDebugPrinted = true;
+      document.getElementById('debug-info').innerText += ' | RAW Trạng thái (task đầu): ' + JSON.stringify(rawStatusVal);
+    }
+    const status = rawStatusVal?.text || 'To Do';
     if (!showAll && status === 'Done') continue;
 
     myTasks.push({
