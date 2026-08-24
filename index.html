@@ -285,26 +285,26 @@ async function submitTask() {
     return;
   }
 
-  const nameFieldId = await getFieldIdByName(table, FIELD_NAME);
-  const descFieldId = await getFieldIdByName(table, FIELD_DESC);
-  const assigneeFieldId = await getFieldIdByName(table, FIELD_ASSIGNEE);
-  const assignerFieldId = await getFieldIdByName(table, FIELD_ASSIGNER);
-  const deadlineFieldId = await getFieldIdByName(table, FIELD_DEADLINE);
-  const priorityFieldId = await getFieldIdByName(table, FIELD_PRIORITY);
-  const statusFieldId = await getFieldIdByName(table, FIELD_STATUS);
-  const assignDateFieldId = await getFieldIdByName(table, FIELD_ASSIGN_DATE);
-
-  const fields = {};
-  fields[nameFieldId] = name;
-  fields[descFieldId] = desc;
-  fields[assigneeFieldId] = [assigneeId]; // assigneeId giờ là employeeRecordId (Link field)
-  fields[assignerFieldId] = [{ id: currentUserId }]; // Người giao vẫn là Person field
-  fields[priorityFieldId] = { text: priority };
-  fields[statusFieldId] = { text: 'Chưa nhận' };
-  fields[assignDateFieldId] = Date.now();
-  if (deadline) fields[deadlineFieldId] = new Date(deadline).getTime();
-
   try {
+    const nameFieldId = await getFieldIdByName(table, FIELD_NAME);
+    const descFieldId = await getFieldIdByName(table, FIELD_DESC);
+    const assigneeFieldId = await getFieldIdByName(table, FIELD_ASSIGNEE);
+    const assignerFieldId = await getFieldIdByName(table, FIELD_ASSIGNER);
+    const deadlineFieldId = await getFieldIdByName(table, FIELD_DEADLINE);
+    const priorityFieldId = await getFieldIdByName(table, FIELD_PRIORITY);
+    const statusFieldId = await getFieldIdByName(table, FIELD_STATUS);
+    const assignDateFieldId = await getFieldIdByName(table, FIELD_ASSIGN_DATE);
+
+    const fields = {};
+    fields[nameFieldId] = name;
+    fields[descFieldId] = desc;
+    fields[assigneeFieldId] = [assigneeId]; // assigneeId là employeeRecordId (Link field)
+    fields[assignerFieldId] = [{ id: currentUserId }]; // Người giao vẫn là Person field
+    fields[priorityFieldId] = { text: priority };
+    fields[statusFieldId] = { text: 'Chưa nhận' };
+    fields[assignDateFieldId] = Date.now();
+    if (deadline) fields[deadlineFieldId] = new Date(deadline).getTime();
+
     await table.addRecord({ fields });
     msgEl.style.color = '#2ba471';
     msgEl.innerText = 'Đã giao task thành công!';
@@ -313,7 +313,7 @@ async function submitTask() {
     document.getElementById('f-deadline').value = '';
   } catch (e) {
     msgEl.style.color = '#d54941';
-    msgEl.innerText = 'Lỗi khi tạo task: ' + e.message + ' (thử đổi fields[assigneeFieldId] = [assigneeId] thành fields[assigneeFieldId] = [{recordIds:[assigneeId]}] nếu vẫn lỗi Link field)';
+    msgEl.innerText = 'Lỗi: ' + e.message;
     console.error(e);
   }
 }
