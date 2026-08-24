@@ -403,10 +403,6 @@ async function renderMyTasks() {
     if (!relevant) continue;
 
     const rawStatusVal = await table.getCellValue(statusFieldId, recId);
-    if (myTasks.length === 0 && !window.__statusDebugPrinted) {
-      window.__statusDebugPrinted = true;
-      document.getElementById('debug-info').innerText += ' | RAW Trạng thái (task đầu): ' + JSON.stringify(rawStatusVal);
-    }
     const status = rawStatusVal?.text || 'To Do';
     if (!showAll && status === 'Done') continue;
 
@@ -463,18 +459,13 @@ async function renderMyTasks() {
     btn.addEventListener('click', async () => {
       const recId = btn.dataset.id;
       const action = btn.dataset.action;
-      console.log('[DEBUG] Bấm nút, action=', action, 'recId=', recId, 'next=', btn.dataset.next);
 
       try {
         const statusFieldId = await getFieldIdByName(table, FIELD_STATUS);
-        console.log('[DEBUG] statusFieldId=', statusFieldId);
 
         if (action === 'self') {
-          console.log('[DEBUG] Đang ghi trạng thái mới:', btn.dataset.next);
           const val = await getOptionValue(table, statusFieldId, btn.dataset.next);
-          console.log('[DEBUG] Giá trị sẽ ghi:', JSON.stringify(val));
           await table.setCellValue(statusFieldId, recId, val);
-          console.log('[DEBUG] Ghi xong, không có lỗi throw.');
         } else if (action === 'approve') {
           await table.setCellValue(statusFieldId, recId, await getOptionValue(table, statusFieldId, 'Done'));
           await appendNote(recId, 'Đã duyệt.');
@@ -485,13 +476,9 @@ async function renderMyTasks() {
           await appendNote(recId, 'Yêu cầu làm lại: ' + reason);
         }
 
-        // Đọc lại ngay để kiểm chứng có thực sự lưu không
-        const checkVal = await table.getCellValue(statusFieldId, recId);
-        console.log('[DEBUG] Đọc lại trạng thái sau khi ghi:', JSON.stringify(checkVal));
-
         renderMyTasks();
       } catch (e) {
-        console.error('[DEBUG] LỖI:', e);
+        console.error(e);
         const msgEl2 = document.getElementById('mytasks-msg');
         msgEl2.style.display = 'block';
         msgEl2.innerText = 'Lỗi khi cập nhật: ' + e.message;
