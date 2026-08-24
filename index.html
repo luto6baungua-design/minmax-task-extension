@@ -307,7 +307,7 @@ async function submitTask() {
     const statusFieldId = await getFieldIdByName(table, FIELD_STATUS);
     const assignDateFieldId = await getFieldIdByName(table, FIELD_ASSIGN_DATE);
 
-    const addResult = await table.addRecord({ [nameFieldId]: name });
+    const addResult = await table.addRecord();
     const newRecordId = addResult.recordId || addResult.record_id || addResult;
 
     // Ghi từng field riêng lẻ để cô lập chính xác field nào gây lỗi (nếu có)
@@ -320,6 +320,7 @@ async function submitTask() {
       }
     };
 
+    await trySet('Tên Task', nameFieldId, name);
     await trySet('Mô tả', descFieldId, desc);
     await trySet('Độ ưu tiên', priorityFieldId, priority);
     await trySet('Trạng thái', statusFieldId, 'To Do');
